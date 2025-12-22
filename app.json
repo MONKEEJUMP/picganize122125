@@ -1,4 +1,7 @@
 {
   "name": "picganize122125",
-  "slug": "picganize122125"
+  "slug": "picganize122125",
+  "plugins": [
+    "expo-router"
+  ]
 }

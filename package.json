@@ -115,11 +115,12 @@
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.3.0",
     "@testing-library/react-native": "^13.2.0",
-    "@types/react-dom": "^19.1.7",
+    "@types/react-dom": "19.1.7",
     "@types/semver": "^7.7.0",
     "immer": "^10.1.1",
-    "react-server-dom-webpack": "~19.0.3",
-    "tsd": "^0.28.1"
+    "react-server-dom-webpack": "19.1.4",
+    "tsd": "^0.28.1",
+    "typescript": "~5.9.2"
   },
   "dependencies": {
     "@expo/metro-runtime": "^6.1.2",
@@ -132,6 +133,7 @@
     "client-only": "^0.0.1",
     "debug": "^4.3.4",
     "escape-string-regexp": "^4.0.0",
+    "expo-router": "~6.0.21",
     "expo-server": "^1.0.5",
     "fast-deep-equal": "^3.1.3",
     "invariant": "^2.2.4",
@@ -139,12 +141,14 @@
     "query-string": "^7.1.3",
     "react-fast-compare": "^3.2.2",
     "react-native-is-edge-to-edge": "^1.1.6",
+    "react-native-web": "*",
     "semver": "~7.6.3",
     "server-only": "^0.0.1",
     "sf-symbols-typescript": "^2.1.0",
     "shallowequal": "^1.1.0",
     "use-latest-callback": "^0.2.1",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "react-server-dom-webpack": "~19.0.3 || ~19.1.4 || ~19.2.3"
   },
   "gitHead": "309f8dc09d24203fb80eca0ad534106c5f73c4b7",
   "private": true
