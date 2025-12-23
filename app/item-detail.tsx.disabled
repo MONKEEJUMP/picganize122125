@@ -3,11 +3,10 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import Colors from "@/constants/colors";
+import Colors from "./constants/colors";
 import { fontSizes, fontWeights } from "@/constants/typography";
 import { useItems } from "@/providers/ItemsProvider";
 import { useTheme } from "@/providers/ThemeProvider";
-
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
   const diff = now - timestamp;
