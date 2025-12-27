@@ -1,12 +1,23 @@
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import type { Href } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
+import { Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
-import Colors from "./constants/colors";
+import Colors from "@/constants/colors";
 import { fontSizes, fontWeights } from "@/constants/typography";
+import * as Haptics from "expo-haptics";
+
+import { loadCelebrateFoundSetting } from "@/lib/storage";
 import { useItems } from "@/providers/ItemsProvider";
 import { useTheme } from "@/providers/ThemeProvider";
+
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
   const diff = now - timestamp;
@@ -33,14 +44,136 @@ function formatRelativeTime(timestamp: number): string {
 export default function ItemDetailScreen() {
   const { theme } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getItemById, markFound } = useItems();
-  const [justMarkedFound, setJustMarkedFound] = useState(false);
+  const { getItemById, replaceItem } = useItems();
 
   const item = useMemo(() => (id ? getItemById(id) : undefined), [getItemById, id]);
 
+  const [celebrateFoundEnabled, setCelebrateFoundEnabled] = useState<boolean>(false);
+
+  useEffect(() => {
+    let didCancel = false;
+
+    const run = async () => {
+      console.log("[ItemDetail] hydrate celebrateFound start", { id });
+      const enabled = await loadCelebrateFoundSetting();
+      if (didCancel) return;
+      console.log("[ItemDetail] hydrate celebrateFound done", { id, enabled });
+      setCelebrateFoundEnabled(enabled);
+    };
+
+    run();
+
+    return () => {
+      didCancel = true;
+    };
+  }, [id]);
+
+  const scale = useSharedValue<number>(1);
+  const savedScale = useSharedValue<number>(1);
+  const translateX = useSharedValue<number>(0);
+  const translateY = useSharedValue<number>(0);
+  const savedTranslateX = useSharedValue<number>(0);
+  const savedTranslateY = useSharedValue<number>(0);
+
+  const pinchGesture = useMemo(() => {
+    return Gesture.Pinch()
+      .onStart(() => {
+        savedScale.value = scale.value;
+        console.log("[ItemDetail] pinch start", {
+          scale: scale.value,
+          translateX: translateX.value,
+          translateY: translateY.value,
+        });
+      })
+      .onUpdate((e) => {
+        const nextScale = Math.min(3, Math.max(1, savedScale.value * e.scale));
+        scale.value = nextScale;
+      })
+      .onEnd(() => {
+        console.log("[ItemDetail] pinch end", {
+          scale: scale.value,
+          translateX: translateX.value,
+          translateY: translateY.value,
+        });
+        if (scale.value < 1) {
+          scale.value = withTiming(1, { duration: 160 });
+          translateX.value = withTiming(0, { duration: 160 });
+          translateY.value = withTiming(0, { duration: 160 });
+          savedTranslateX.value = 0;
+          savedTranslateY.value = 0;
+        }
+      });
+  }, [savedScale, scale, savedTranslateX, savedTranslateY, translateX, translateY]);
+
+  const panGesture = useMemo(() => {
+    return Gesture.Pan()
+      .onBegin(() => {
+        savedTranslateX.value = translateX.value;
+        savedTranslateY.value = translateY.value;
+      })
+      .onUpdate((e) => {
+        if (scale.value <= 1) return;
+        translateX.value = savedTranslateX.value + e.translationX;
+        translateY.value = savedTranslateY.value + e.translationY;
+      })
+      .onEnd(() => {
+        if (scale.value <= 1) {
+          translateX.value = withTiming(0, { duration: 140 });
+          translateY.value = withTiming(0, { duration: 140 });
+          savedTranslateX.value = 0;
+          savedTranslateY.value = 0;
+        } else {
+          savedTranslateX.value = translateX.value;
+          savedTranslateY.value = translateY.value;
+        }
+      });
+  }, [savedTranslateX, savedTranslateY, scale, translateX, translateY]);
+
+  const tapToResetGesture = useMemo(() => {
+    return Gesture.Tap()
+      .maxDuration(220)
+      .maxDistance(10)
+      .onEnd(() => {
+        const shouldReset =
+          scale.value > 1.001 ||
+          Math.abs(translateX.value) > 0.5 ||
+          Math.abs(translateY.value) > 0.5;
+
+        if (!shouldReset) return;
+
+        console.log("[ItemDetail] tap reset", {
+          scale: scale.value,
+          translateX: translateX.value,
+          translateY: translateY.value,
+        });
+
+        scale.value = withTiming(1, { duration: 190 });
+        translateX.value = withTiming(0, { duration: 190 });
+        translateY.value = withTiming(0, { duration: 190 });
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+      });
+  }, [savedTranslateX, savedTranslateY, scale, translateX, translateY]);
+
+  const combinedGesture = useMemo(
+    () => Gesture.Simultaneous(pinchGesture, panGesture, tapToResetGesture),
+    [panGesture, pinchGesture, tapToResetGesture],
+  );
+
+  const photoAnimatedStyle = useAnimatedStyle(() => {
+    const effectiveScale = Math.max(1, scale.value);
+    return {
+      transform: [
+        { translateX: effectiveScale > 1 ? translateX.value : 0 },
+        { translateY: effectiveScale > 1 ? translateY.value : 0 },
+        { scale: effectiveScale },
+      ],
+    };
+  }, []);
+
   if (!item) {
     return (
-      <View style={styles.container} testID="item-detail-not-found">
+      <View style={[styles.container, { backgroundColor: theme.background }]} testID="item-detail-not-found">
         <Pressable
           style={styles.backButton}
           onPress={() => router.back()}
@@ -48,10 +181,10 @@ export default function ItemDetailScreen() {
           accessibilityLabel="back"
           testID="item-detail-back"
         >
-          <Text style={styles.backText}>back</Text>
+          <Text style={[styles.backText, { color: theme.text }]}>back</Text>
         </Pressable>
         <View style={styles.notFoundWrap}>
-          <Text style={styles.notFoundTitle}>item not found</Text>
+          <Text style={[styles.notFoundTitle, { color: theme.text }]}>item not found</Text>
         </View>
       </View>
     );
@@ -64,18 +197,13 @@ export default function ItemDetailScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]} testID="item-detail-screen">
       <ScrollView bounces={false}>
         <View style={[styles.photoWrap, { backgroundColor: theme.background }]}>
-          {photoUri ? <Image source={{ uri: photoUri }} style={styles.photo} contentFit="cover" transition={0} /> : null}
-          <View style={styles.headerOverlay}>
-            <Pressable
-              style={[styles.headerPill, { backgroundColor: theme.background, borderColor: theme.text }]}
-              onPress={() => router.back()}
-              accessibilityRole="button"
-              accessibilityLabel="back"
-              testID="item-detail-back"
-            >
-              <Text style={[styles.headerPillText, { color: theme.text }]}>back</Text>
-            </Pressable>
-          </View>
+          {photoUri ? (
+            <GestureDetector gesture={combinedGesture}>
+              <Animated.View style={[styles.photo, photoAnimatedStyle]} testID="item-detail-photo-zoom-wrap">
+                <Image source={{ uri: photoUri }} style={styles.photo} contentFit="cover" transition={0} />
+              </Animated.View>
+            </GestureDetector>
+          ) : null}
         </View>
 
         <View style={styles.content}>
@@ -99,24 +227,73 @@ export default function ItemDetailScreen() {
             </Text>
           ) : null}
 
-          <Pressable
-            style={({ pressed }) => [
-              styles.foundItButton,
-              { borderColor: theme.text },
-              pressed && { opacity: 0.65 },
-            ]}
-            onPress={() => {
-              markFound(item.id);
-              setJustMarkedFound(true);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="found it"
-            testID="item-detail-found-it"
-          >
-            <Text style={[styles.foundItText, { color: theme.text }]}>
-              {justMarkedFound ? "found!" : "found it"}
-            </Text>
-          </Pressable>
+          <View style={styles.actionsRow} testID="item-detail-actions">
+            {celebrateFoundEnabled ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.updateLocationButton,
+                  { borderColor: theme.text },
+                  pressed && { opacity: 0.65 },
+                ]}
+                onPress={async () => {
+                  const nextCount = (item.foundCount ?? 0) + 1;
+                  console.log("[ItemDetail] found it press", { id: item.id, nextCount });
+
+                  try {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  } catch (e) {
+                    console.log("[ItemDetail] found it haptic error", e);
+                  }
+
+                  try {
+                    await replaceItem({ ...item, foundCount: nextCount });
+                    console.log("[ItemDetail] foundCount saved", { id: item.id, nextCount });
+                  } catch (e) {
+                    console.log("[ItemDetail] foundCount save error", e);
+                  }
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="found it"
+                testID="item-detail-found-it"
+              >
+                <Text style={[styles.updateLocationText, { color: theme.text }]}>found it · {item.foundCount ?? 0}</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              style={({ pressed }) => [
+                styles.updateLocationButton,
+                { borderColor: theme.text },
+                pressed && { opacity: 0.65 },
+              ]}
+              onPress={() => {
+                router.push(
+                  {
+                    pathname: "/(tabs)/camera",
+                    params: { updateItemId: item.id },
+                  } as unknown as Href,
+                );
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="update location"
+              testID="item-detail-update-location"
+            >
+              <Text style={[styles.updateLocationText, { color: theme.text }]}>update location</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.updateLocationButton,
+                { borderColor: theme.text },
+                pressed && { opacity: 0.65 },
+              ]}
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="back"
+              testID="item-detail-back"
+            >
+              <Text style={[styles.updateLocationText, { color: theme.text }]}>back</Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -126,7 +303,6 @@ export default function ItemDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.black,
   },
   backButton: {
     paddingTop: 60,
@@ -148,73 +324,61 @@ const styles = StyleSheet.create({
   },
   photoWrap: {
     width: "100%",
-    aspectRatio: 1,
-    backgroundColor: Colors.black,
+    height: Dimensions.get("window").height * 0.45,
   },
   photo: {
     width: "100%",
     height: "100%",
   },
-  headerOverlay: {
-    position: "absolute",
-    top: 60,
-    left: 20,
-    right: 20,
-    flexDirection: "row",
-    justifyContent: "flex-start",
-  },
-  headerPill: {
-    backgroundColor: Colors.black,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 2,
-    borderColor: Colors.white,
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  headerPillText: {
-    color: Colors.white,
-    fontSize: fontSizes.sm,
-    textTransform: "lowercase",
-  },
   content: {
     paddingHorizontal: 20,
-    paddingTop: 18,
+    paddingTop: 14,
     paddingBottom: 32,
+    alignItems: "center",
+  },
+  actionsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 16,
+    flexWrap: "wrap",
   },
   name: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: fontWeights.bold,
     color: Colors.white,
     letterSpacing: -0.6,
-    marginBottom: 8,
+    marginBottom: 4,
     textTransform: "lowercase",
+    textAlign: "center",
   },
   location: {
-    fontSize: fontSizes.md,
-    color: Colors.white,
-    marginBottom: 10,
-    textTransform: "lowercase",
-  },
-  timeEcho: {
     fontSize: fontSizes.sm,
     color: Colors.white,
     marginBottom: 6,
     textTransform: "lowercase",
-    opacity: 0.7,
+    textAlign: "center",
   },
-  foundItButton: {
-    alignSelf: "flex-start",
-    borderWidth: 2,
+  timeEcho: {
+    fontSize: 12,
+    color: Colors.white,
+    marginBottom: 4,
+    textTransform: "lowercase",
+    opacity: 0.6,
+    textAlign: "center",
+  },
+  updateLocationButton: {
+    borderWidth: 1.5,
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
     minHeight: 44,
     justifyContent: "center",
+    alignItems: "center",
   },
-  foundItText: {
-    fontSize: fontSizes.sm,
+  updateLocationText: {
+    fontSize: 14,
     textTransform: "lowercase",
   },
 });
