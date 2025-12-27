@@ -1,12 +1,9 @@
-import { enableScreens } from "react-native-screens";
-
-// CRITICAL: Must run BEFORE importing expo-router / navigation.
-// This prevents RNSScreen from being used (where your crash occurs).
+﻿import { enableScreens } from "react-native-screens";
 enableScreens(false);
 
-// IMPORTANT: Use require AFTER enableScreens(false) so imports can't initialize screens first.
 const { Stack } = require("expo-router");
 const { Platform, Text, TextInput } = require("react-native");
+import { ItemsProvider } from "./providers/ItemsProvider";
 
 // iOS-only global default font (LOCKED)
 if (Platform.OS === "ios") {
@@ -15,7 +12,6 @@ if (Platform.OS === "ios") {
     prevTextDefaultProps.style && typeof prevTextDefaultProps.style === "object"
       ? prevTextDefaultProps.style
       : undefined;
-
   Text.defaultProps = {
     ...prevTextDefaultProps,
     style: [{ fontFamily: "Futura-CondensedExtraBold" }, prevTextStyle].filter(Boolean),
@@ -26,7 +22,6 @@ if (Platform.OS === "ios") {
     prevTextInputDefaultProps.style && typeof prevTextInputDefaultProps.style === "object"
       ? prevTextInputDefaultProps.style
       : undefined;
-
   TextInput.defaultProps = {
     ...prevTextInputDefaultProps,
     style: [{ fontFamily: "Futura-CondensedExtraBold" }, prevTextInputStyle].filter(Boolean),
@@ -34,5 +29,9 @@ if (Platform.OS === "ios") {
 }
 
 export default function RootLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <ItemsProvider>
+      <Stack screenOptions={{ headerShown: false }} />
+    </ItemsProvider>
+  );
 }
